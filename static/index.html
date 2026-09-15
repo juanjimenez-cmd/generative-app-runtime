@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Generative App Runtime</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar">
+      <div class="brand"><span class="logo">G</span><div><strong>Generative Runtime</strong><small>Apps bajo demanda</small></div></div>
+      <button id="newBtn" class="primary full">＋ Crear app</button>
+      <div class="section-title">Mis Apps</div>
+      <div id="appList" class="app-list"></div>
+      <div class="sidebar-foot">
+        <div id="apiStatus" class="status">Comprobando API…</div>
+        <small>Las apps se ejecutan en un iframe aislado.</small>
+      </div>
+    </aside>
+
+    <main class="workspace">
+      <header class="topbar">
+        <div><h1 id="workspaceTitle">Generative App Runtime</h1><p id="workspaceSub">Describe una herramienta y conviértela en una app temporal.</p></div>
+        <div class="top-actions"><button id="duplicateBtn" class="ghost hidden">Duplicar</button><button id="renameBtn" class="ghost hidden">Renombrar</button><button id="deleteBtn" class="danger hidden">Eliminar</button></div>
+      </header>
+
+      <section id="creator" class="creator card">
+        <div class="creator-head"><div><span class="eyebrow">AI APP BUILDER</span><h2>¿Qué necesitas crear?</h2></div><div class="shield">🛡️ Sandbox activo</div></div>
+        <textarea id="prompt" placeholder="Ej.: Crea una calculadora de amortización con monto, tasa anual, plazo y tabla mensual…"></textarea>
+        <div class="creator-controls">
+          <label>Modelo <select id="model"><option value="auto">Automático</option></select></label>
+          <label class="grow">Título opcional <input id="title" maxlength="120" placeholder="Mi calculadora"></label>
+          <button id="generateBtn" class="primary">Generar app</button>
+        </div>
+        <div id="generationInfo" class="generation-info"></div>
+      </section>
+
+      <section id="previewCard" class="preview card hidden">
+        <div class="preview-bar">
+          <div><strong id="previewTitle">Vista previa</strong><span id="versionMeta"></span></div>
+          <div class="preview-actions"><select id="versionSelect" title="Versiones"></select><button id="editBtn" class="ghost">Nueva versión</button><button id="reloadBtn" class="ghost">Recargar</button></div>
+        </div>
+        <iframe id="appFrame" sandbox="allow-scripts" referrerpolicy="no-referrer" title="Aplicación generada"></iframe>
+      </section>
+
+      <section class="how card">
+        <div><strong>1. Describe</strong><span>Escribe la herramienta exacta que necesitas.</span></div>
+        <div><strong>2. Genera</strong><span>Cerebras produce un HTML autocontenido.</span></div>
+        <div><strong>3. Ejecuta aislado</strong><span>Sin shell, Python ni acceso directo a tu equipo.</span></div>
+        <div><strong>4. Guarda</strong><span>Las apps útiles quedan en tu biblioteca local.</span></div>
+      </section>
+    </main>
+  </div>
+  <div id="toast" class="toast hidden"></div>
+  <script src="/static/app.js"></script>
+</body>
+</html>
