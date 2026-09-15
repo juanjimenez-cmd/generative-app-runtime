@@ -46,7 +46,7 @@ def seed_examples() -> None:
                 (app_id, title, now, now, version_id),
             )
             conn.execute(
-                """INSERT INTO versions(id,app_id,version_number,prompt,model,input_tokens,output_tokens,estimated_cost_usd,html_path,created_at)
-                   VALUES(?,?,?,?,?,?,?,?,?,?)""",
-                (version_id, app_id, 1, prompt, "local-example", 0, 0, 0.0, str(path), now),
+                """INSERT INTO versions(id,app_id,version_number,prompt,model,routing_reason,input_tokens,output_tokens,estimated_cost_usd,html_path,created_at)
+                   VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                (version_id, app_id, 1, prompt, "local-example", "Ejemplo local preinstalado.", 0, 0, 0.0, str(path), now),
             )
