@@ -44,6 +44,7 @@ def init_db() -> None:
                 version_number INTEGER NOT NULL,
                 prompt TEXT NOT NULL,
                 model TEXT NOT NULL,
+                routing_reason TEXT NOT NULL DEFAULT '',
                 input_tokens INTEGER NOT NULL DEFAULT 0,
                 output_tokens INTEGER NOT NULL DEFAULT 0,
                 estimated_cost_usd REAL NOT NULL DEFAULT 0,
@@ -56,3 +57,6 @@ def init_db() -> None:
             CREATE INDEX IF NOT EXISTS idx_versions_app_id ON versions(app_id);
             """
         )
+        columns = {row["name"] for row in conn.execute("PRAGMA table_info(versions)").fetchall()}
+        if "routing_reason" not in columns:
+            conn.execute("ALTER TABLE versions ADD COLUMN routing_reason TEXT NOT NULL DEFAULT ''")

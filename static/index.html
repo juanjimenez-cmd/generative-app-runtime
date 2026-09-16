@@ -9,7 +9,7 @@
 <body>
   <div class="shell">
     <aside class="sidebar">
-      <div class="brand"><span class="logo">G</span><div><strong>Generative Runtime</strong><small>Apps bajo demanda</small></div></div>
+      <div class="brand"><span class="logo">G</span><div><strong>Generative Runtime</strong><small>Apps bajo demanda · v0.2-dev</small></div></div>
       <button id="newBtn" class="primary full">＋ Crear app</button>
       <div class="section-title">Mis Apps</div>
       <div id="appList" class="app-list"></div>
@@ -26,7 +26,7 @@
       </header>
 
       <section id="creator" class="creator card">
-        <div class="creator-head"><div><span class="eyebrow">AI APP BUILDER</span><h2>¿Qué necesitas crear?</h2></div><div class="shield">🛡️ Sandbox activo</div></div>
+        <div class="creator-head"><div><span class="eyebrow">AI APP BUILDER</span><h2 id="creatorTitle">¿Qué necesitas crear?</h2></div><div class="shield">🛡️ Sandbox activo</div></div>
         <textarea id="prompt" placeholder="Ej.: Crea una calculadora de amortización con monto, tasa anual, plazo y tabla mensual…"></textarea>
         <div class="creator-controls">
           <label>Modelo <select id="model"><option value="auto">Automático</option></select></label>
@@ -39,16 +39,16 @@
       <section id="previewCard" class="preview card hidden">
         <div class="preview-bar">
           <div><strong id="previewTitle">Vista previa</strong><span id="versionMeta"></span></div>
-          <div class="preview-actions"><select id="versionSelect" title="Versiones"></select><button id="editBtn" class="ghost">Nueva versión</button><button id="reloadBtn" class="ghost">Recargar</button></div>
+          <div class="preview-actions"><select id="versionSelect" title="Versiones"></select><button id="editBtn" class="ghost">Modificar con IA</button><button id="reloadBtn" class="ghost">Recargar</button></div>
         </div>
         <iframe id="appFrame" sandbox="allow-scripts" referrerpolicy="no-referrer" title="Aplicación generada"></iframe>
       </section>
 
       <section class="how card">
         <div><strong>1. Describe</strong><span>Escribe la herramienta exacta que necesitas.</span></div>
-        <div><strong>2. Genera</strong><span>Cerebras produce un HTML autocontenido.</span></div>
+        <div><strong>2. Genera en vivo</strong><span>Ves el progreso mientras Cerebras produce el código.</span></div>
         <div><strong>3. Ejecuta aislado</strong><span>Sin shell, Python ni acceso directo a tu equipo.</span></div>
-        <div><strong>4. Guarda</strong><span>Las apps útiles quedan en tu biblioteca local.</span></div>
+        <div><strong>4. Itera</strong><span>Pide cambios en lenguaje natural sin perder versiones anteriores.</span></div>
       </section>
     </main>
   </div>

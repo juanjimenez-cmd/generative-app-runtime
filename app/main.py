@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import shutil
 import uuid
 from pathlib import Path
@@ -8,17 +9,17 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse, HTMLResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from .cerebras import generate_app
+from .cerebras import GenerationResult, generate_app, stream_app
 from .config import BASE_DIR, CEREBRAS_API_KEY, GENERATED_DIR, MODEL_PRICING, SUPPORTED_MODELS
 from .db import db, init_db, utcnow
 from .examples import seed_examples
 from .security import extract_html, response_security_headers
 
-app = FastAPI(title="Generative App Runtime", version="0.1.0")
+app = FastAPI(title="Generative App Runtime", version="0.2.0-dev")
 STATIC_DIR = BASE_DIR / "static"
 
 
@@ -55,6 +56,81 @@ def app_payload(conn, row):
     return data
 
 
+def current_app_context(app_id: str | None) -> tuple[str | None, str | None]:
+    if not app_id:
+        return None, None
+    with db() as conn:
+        app_row = conn.execute("SELECT * FROM apps WHERE id=?", (app_id,)).fetchone()
+        if not app_row:
+            raise HTTPException(404, "App base no encontrada")
+        version = conn.execute("SELECT * FROM versions WHERE id=?", (app_row["current_version_id"],)).fetchone()
+        if not version:
+            raise HTTPException(409, "La app no tiene una versión actual utilizable")
+        path = Path(version["html_path"])
+        if not path.exists():
+            raise HTTPException(409, "El HTML de la versión actual no existe")
+        return app_row["title"], path.read_text(encoding="utf-8")
+
+
+def persist_generation(req: GenerateRequest, safe_html: str, result: GenerationResult) -> dict:
+    now = utcnow()
+    with db() as conn:
+        if req.app_id:
+            existing = conn.execute("SELECT * FROM apps WHERE id=?", (req.app_id,)).fetchone()
+            if not existing:
+                raise HTTPException(404, "App base no encontrada")
+            app_id = req.app_id
+            next_version = conn.execute(
+                "SELECT COALESCE(MAX(version_number),0)+1 AS n FROM versions WHERE app_id=?", (app_id,)
+            ).fetchone()["n"]
+            title = req.title or existing["title"]
+        else:
+            app_id = str(uuid.uuid4())
+            next_version = 1
+            title = (req.title or req.prompt.strip().splitlines()[0])[:120]
+
+        version_id = str(uuid.uuid4())
+        folder = GENERATED_DIR / app_id
+        folder.mkdir(parents=True, exist_ok=True)
+        html_path = folder / f"v{next_version}.html"
+        html_path.write_text(safe_html, encoding="utf-8")
+
+        if req.app_id:
+            conn.execute(
+                "UPDATE apps SET title=?,updated_at=?,current_version_id=?,is_example=0 WHERE id=?",
+                (title, now, version_id, app_id),
+            )
+        else:
+            conn.execute(
+                "INSERT INTO apps(id,title,created_at,updated_at,current_version_id,is_example) VALUES(?,?,?,?,?,0)",
+                (app_id, title, now, now, version_id),
+            )
+
+        conn.execute(
+            """INSERT INTO versions(id,app_id,version_number,prompt,model,routing_reason,input_tokens,output_tokens,estimated_cost_usd,html_path,created_at)
+               VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+            (
+                version_id,
+                app_id,
+                next_version,
+                req.prompt,
+                result.model,
+                result.routing_reason,
+                result.input_tokens,
+                result.output_tokens,
+                result.estimated_cost_usd,
+                str(html_path),
+                now,
+            ),
+        )
+        row = conn.execute("SELECT * FROM apps WHERE id=?", (app_id,)).fetchone()
+        return app_payload(conn, row)
+
+
+def sse(payload: dict) -> str:
+    return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+
 @app.on_event("startup")
 def startup() -> None:
     init_db()
@@ -63,7 +139,7 @@ def startup() -> None:
 
 @app.get("/health")
 def health():
-    return {"ok": True}
+    return {"ok": True, "version": "0.2.0-dev"}
 
 
 @app.get("/api/config")
@@ -73,6 +149,7 @@ def config():
         "models": ["auto", *SUPPORTED_MODELS],
         "pricing": MODEL_PRICING,
         "sandbox": "iframe sandbox=allow-scripts + restrictive CSP",
+        "features": {"streaming": True, "natural_language_edit": True, "smart_router": True},
     }
 
 
@@ -103,65 +180,58 @@ def get_app(app_id: str):
 
 @app.post("/api/apps/generate")
 async def create_or_regenerate(req: GenerateRequest):
+    _, current_html = current_app_context(req.app_id)
     try:
-        result = await generate_app(req.prompt, req.model)
+        result = await generate_app(req.prompt, req.model, current_html=current_html)
         safe_html = extract_html(result.content)
     except (ValueError, RuntimeError) as exc:
         raise HTTPException(400 if isinstance(exc, ValueError) else 502, str(exc)) from exc
     except Exception as exc:
         raise HTTPException(502, f"No se pudo generar la app: {exc}") from exc
+    return persist_generation(req, safe_html, result)
 
-    now = utcnow()
-    with db() as conn:
-        if req.app_id:
-            existing = conn.execute("SELECT * FROM apps WHERE id=?", (req.app_id,)).fetchone()
-            if not existing:
-                raise HTTPException(404, "App base no encontrada")
-            app_id = req.app_id
-            next_version = conn.execute(
-                "SELECT COALESCE(MAX(version_number),0)+1 AS n FROM versions WHERE app_id=?", (app_id,)
-            ).fetchone()["n"]
-            title = req.title or existing["title"]
-        else:
-            app_id = str(uuid.uuid4())
-            next_version = 1
-            title = (req.title or req.prompt.strip().splitlines()[0])[:120]
 
-        version_id = str(uuid.uuid4())
-        folder = GENERATED_DIR / app_id
-        folder.mkdir(parents=True, exist_ok=True)
-        html_path = folder / f"v{next_version}.html"
-        html_path.write_text(safe_html, encoding="utf-8")
+@app.post("/api/apps/generate/stream")
+async def create_or_regenerate_stream(req: GenerateRequest):
+    _, current_html = current_app_context(req.app_id)
 
-        if req.app_id:
-            conn.execute(
-                "UPDATE apps SET title=?,updated_at=?,current_version_id=? WHERE id=?",
-                (title, now, version_id, app_id),
+    async def event_stream():
+        accumulated = ""
+        done_event: dict | None = None
+        try:
+            yield sse({"type": "status", "status": "starting", "message": "Conectando con Cerebras…"})
+            async for event in stream_app(req.prompt, req.model, current_html=current_html):
+                if event["type"] == "routing":
+                    yield sse(event)
+                elif event["type"] == "delta":
+                    accumulated += event["content"]
+                    yield sse({"type": "delta", "chars": len(accumulated), "content": event["content"]})
+                elif event["type"] == "done":
+                    done_event = event
+
+            if not done_event:
+                raise RuntimeError("El stream terminó sin un resultado final.")
+
+            yield sse({"type": "status", "status": "validating", "message": "Validando sandbox y CSP…"})
+            safe_html = extract_html(accumulated or done_event.get("content", ""))
+            result = GenerationResult(
+                content=accumulated,
+                model=done_event["model"],
+                input_tokens=done_event["input_tokens"],
+                output_tokens=done_event["output_tokens"],
+                estimated_cost_usd=done_event["estimated_cost_usd"],
+                routing_reason=done_event["routing_reason"],
             )
-        else:
-            conn.execute(
-                "INSERT INTO apps(id,title,created_at,updated_at,current_version_id,is_example) VALUES(?,?,?,?,?,0)",
-                (app_id, title, now, now, version_id),
-            )
+            saved = persist_generation(req, safe_html, result)
+            yield sse({"type": "saved", "app": saved})
+        except Exception as exc:
+            yield sse({"type": "error", "message": str(exc)})
 
-        conn.execute(
-            """INSERT INTO versions(id,app_id,version_number,prompt,model,input_tokens,output_tokens,estimated_cost_usd,html_path,created_at)
-               VALUES(?,?,?,?,?,?,?,?,?,?)""",
-            (
-                version_id,
-                app_id,
-                next_version,
-                req.prompt,
-                result.model,
-                result.input_tokens,
-                result.output_tokens,
-                result.estimated_cost_usd,
-                str(html_path),
-                now,
-            ),
-        )
-        row = conn.execute("SELECT * FROM apps WHERE id=?", (app_id,)).fetchone()
-        return app_payload(conn, row)
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no"},
+    )
 
 
 @app.patch("/api/apps/{app_id}")
@@ -196,14 +266,15 @@ def duplicate_app(app_id: str):
             (new_app_id, f"{source['title']} (copia)", now, now, new_version_id),
         )
         conn.execute(
-            """INSERT INTO versions(id,app_id,version_number,prompt,model,input_tokens,output_tokens,estimated_cost_usd,html_path,created_at)
-               VALUES(?,?,?,?,?,?,?,?,?,?)""",
+            """INSERT INTO versions(id,app_id,version_number,prompt,model,routing_reason,input_tokens,output_tokens,estimated_cost_usd,html_path,created_at)
+               VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
             (
                 new_version_id,
                 new_app_id,
                 1,
                 f"Copia de {source['title']}",
                 current["model"],
+                current["routing_reason"],
                 0,
                 0,
                 0.0,
